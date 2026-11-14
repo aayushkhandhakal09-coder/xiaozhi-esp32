@@ -33,6 +33,7 @@ private:
     float current_angles_[9] = {90, 90, 90, 90, 90, 90, 90, 90, 90};
     int servo_offsets_[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     bool is_busy_action_ = false;
+    std::string current_mode_ = "chatbot";
 
     void WriteReg(uint8_t reg, uint8_t val) {
         if (!pca_dev_) return;
@@ -210,6 +211,39 @@ public:
         is_busy_action_ = false;
     }
 
+    void SetMode(const std::string& mode) {
+        current_mode_ = mode;
+        is_busy_action_ = true;
+        if (mode == "teacher") {
+            float p[9] = {50, 65, 90, 90, 90, 90, 90, 90, 80};
+            MoveAllSmooth(p, 350);
+        } else if (mode == "disaster") {
+            float p[9] = {40, 45, 90, 90, 140, 135, 90, 90, 90};
+            MoveAllSmooth(p, 300);
+        } else if (mode == "memory") {
+            float p[9] = {65, 50, 90, 90, 95, 100, 90, 90, 110};
+            MoveAllSmooth(p, 350);
+        } else if (mode == "mirror") {
+            StandNeutral(300);
+        } else if (mode == "entertainment") {
+            Dance();
+        } else if (mode == "security") {
+            float p[9] = {75, 70, 90, 90, 105, 110, 90, 90, 50};
+            MoveAllSmooth(p, 350);
+        } else if (mode == "fitness") {
+            for (int i = 0; i < 2; i++) {
+                float up[9] = {15, 85, 90, 90, 165, 95, 90, 90, 90};
+                float down[9] = {85, 85, 75, 105, 95, 95, 105, 75, 90};
+                MoveAllSmooth(up, 350);
+                MoveAllSmooth(down, 350);
+            }
+            StandNeutral(350);
+        } else {
+            StandNeutral(350);
+        }
+        is_busy_action_ = false;
+    }
+
     void RunModeBehaviorLoop() {
         int tick = 0;
         while (true) {
@@ -361,6 +395,21 @@ private:
         }, "robot_mode_task", 4096, &robot_, 3, nullptr);
 
         auto& mcp = McpServer::GetInstance();
+
+        mcp.AddTool("robot.set_mode",
+            "Switch the humanoid robot operating mode and show mode notification on OLED. "
+            "Available modes: chatbot, teacher, disaster, memory, mirror, voice_control, entertainment, security, fitness.",
+            PropertyList({
+                Property("mode", kPropertyTypeString)
+            }),
+            [this](const PropertyList& properties) -> ToolResult {
+                std::string m = properties["mode"].value<std::string>();
+                robot_.SetMode(m);
+                if (display_) {
+                    display_->ShowNotification("MODE: " + m);
+                }
+                return true;
+            });
 
         mcp.AddTool("robot.perform_action",
             "Make the humanoid robot perform a full-body physical action. "
