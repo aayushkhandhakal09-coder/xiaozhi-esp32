@@ -13,9 +13,9 @@ jobs:
       - name: Build ESP32-S3 Firmware
         run: |
           . $IDF_PATH/export.sh
-          python3 scripts/release.py bread-compact-wifi
+          python3 scripts/build.py bread-compact-wifi --name bread-compact-wifi-128x64
       - name: Upload Robot Firmware
         uses: actions/upload-artifact@v4
         with:
           name: xiaozhi-humanoid-robot-firmware
-          path: releases/*.zip
+          path: build/merged-binary.bin
