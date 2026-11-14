@@ -1,0 +1,23 @@
+name: Build Xiaozhi Humanoid Robot
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build ESP32-S3 Firmware
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32s3
+          idf.py build
+          esptool.py --chip esp32s3 merge_bin -o build/xiaozhi-robot-merged.bin @build/flash_args
+      - name: Upload Robot Firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaozhi-humanoid-robot-firmware
+          path: build/xiaozhi-robot-merged.bin
