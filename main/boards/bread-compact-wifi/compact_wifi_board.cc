@@ -397,7 +397,7 @@ private:
                 std::stringstream ss(angles_str);
                 std::string item;
                 int idx = 0;
-                while (std::getline(ss, item, chr(44)) && idx < 9) {
+                while (std::getline(ss, item, ',') && idx < 9) {
                     int val = std::stoi(item);
                     target[idx] = (val < 0) ? 90.0f : std::clamp(val, 0, 180);
                     idx++;
