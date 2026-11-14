@@ -288,3 +288,4 @@ private:
         panel_config.reset_gpio_num = GPIO_NUM_NC;
         panel_config.bits_per_pixel = 1;
 
+// trigger build
