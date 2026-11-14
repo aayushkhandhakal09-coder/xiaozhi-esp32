@@ -5,17 +5,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: espressif/idf:release-v6.1
+    container:
+      image: espressif/idf:release-v6.1
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Checkout
+        uses: actions/checkout@v7
       - name: Build ESP32-S3 Firmware
+        shell: bash
         run: |
-          . $IDF_PATH/export.sh
-          python3 scripts/build.py bread-compact-wifi --name bread-compact-wifi-128x64
+          python scripts/build.py bread-compact-wifi --name bread-compact-wifi-128x64
       - name: Publish Firmware File to Releases
         uses: softprops/action-gh-release@v2
         with:
