@@ -288,4 +288,156 @@ private:
         panel_config.reset_gpio_num = GPIO_NUM_NC;
         panel_config.bits_per_pixel = 1;
 
-// trigger build
+        esp_lcd_panel_ssd1306_config_t ssd1306_config = {
+            .height = static_cast<uint8_t>(DISPLAY_HEIGHT),
+        };
+        panel_config.vendor_config = &ssd1306_config;
+
+#ifdef SH1106
+        ESP_ERROR_CHECK(esp_lcd_new_panel_sh1106(panel_io_, &panel_config, &panel_));
+#else
+        ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(panel_io_, &panel_config, &panel_));
+#endif
+        ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
+        if (esp_lcd_panel_init(panel_) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize display");
+            display_ = new NoDisplay();
+            return;
+        }
+        ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_, false));
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+
+        display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+    }
+
+    void InitializeButtons() {
+        boot_button_.OnClick([this]() {
+            auto& app = Application::GetInstance();
+            if (app.GetDeviceState() == kDeviceStateStarting) {
+                EnterWifiConfigMode();
+                return;
+            }
+            app.ToggleChatState();
+        });
+        touch_button_.OnPressDown([this]() {
+            Application::GetInstance().StartListening();
+        });
+        touch_button_.OnPressUp([this]() {
+            Application::GetInstance().StopListening();
+        });
+
+        volume_up_button_.OnClick([this]() {
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() + 10;
+            if (volume > 100) volume = 100;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+        });
+
+        volume_up_button_.OnLongPress([this]() {
+            GetAudioCodec()->SetOutputVolume(100);
+            GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
+        });
+
+        volume_down_button_.OnClick([this]() {
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) volume = 0;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+        });
+
+        volume_down_button_.OnLongPress([this]() {
+            GetAudioCodec()->SetOutputVolume(0);
+            GetDisplay()->ShowNotification(Lang::Strings::MUTED);
+        });
+    }
+
+    void InitializeRobotTools() {
+        robot_.Init(display_i2c_bus_);
+
+        xTaskCreate([](void* arg) {
+            static_cast<HumanoidRobotController*>(arg)->RunModeBehaviorLoop();
+        }, "robot_mode_task", 4096, &robot_, 3, nullptr);
+
+        auto& mcp = McpServer::GetInstance();
+
+        mcp.AddTool("robot.perform_action",
+            "Make the humanoid robot perform a full-body physical action. "
+            "Available actions: stand, wave, walk_forward, walk_backward, turn_left, turn_right, dance, nod_yes, shake_no.",
+            PropertyList({
+                Property("action", kPropertyTypeString)
+            }),
+            [this](const PropertyList& properties) -> ToolResult {
+                std::string act = properties["action"].value<std::string>();
+                if (act == "wave") robot_.WaveHand();
+                else if (act == "walk_forward") robot_.WalkForward(3);
+                else if (act == "walk_backward") robot_.WalkBackward(2);
+                else if (act == "turn_left") robot_.Turn(true, 2);
+                else if (act == "turn_right") robot_.Turn(false, 2);
+                else if (act == "dance") robot_.Dance();
+                else if (act == "nod_yes") robot_.NodHead(true);
+                else if (act == "shake_no") robot_.NodHead(false);
+                else robot_.StandNeutral();
+                return true;
+            });
+
+        mcp.AddTool("robot.set_all_joints",
+            "Control all 9 servo joints directly with custom angles (0 to 180) for any custom pose or emotion. "
+            "Order: Ch0=RightShoulder, Ch1=RightElbow, Ch2=RightHip, Ch3=RightFoot, Ch4=LeftShoulder, Ch5=LeftElbow, Ch6=LeftHip, Ch7=LeftFoot, Ch8=Neck. "
+            "Pass as comma-separated string like 30,60,90,90,150,120,90,90,70 and duration_ms.",
+            PropertyList({
+                Property("angles", kPropertyTypeString),
+                Property("duration_ms", kPropertyTypeInteger, 400, 100, 2000)
+            }),
+            [this](const PropertyList& properties) -> ToolResult {
+                std::string angles_str = properties["angles"].value<std::string>();
+                int duration = properties["duration_ms"].value<int>();
+                float target = {90, 90, 90, 90, 90, 90, 90, 90, 90};
+                std::stringstream ss(angles_str);
+                std::string item;
+                int idx = 0;
+                while (std::getline(ss, item, ",") && idx < 9) {
+                    int val = std::stoi(item);
+                    target[idx] = (val < 0) ? 90.0f : std::clamp(val, 0, 180);
+                    idx++;
+                }
+                robot_.MoveAllSmooth(target, duration);
+                return true;
+            });
+    }
+
+public:
+    CompactWifiBoard() :
+        boot_button_(BOOT_BUTTON_GPIO),
+        touch_button_(TOUCH_BUTTON_GPIO),
+        volume_up_button_(VOLUME_UP_BUTTON_GPIO),
+        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
+        InitializeDisplayI2c();
+        InitializeSsd1306Display();
+        InitializeButtons();
+        InitializeRobotTools();
+    }
+
+    virtual Led* GetLed() override {
+        static SingleLed led(BUILTIN_LED_GPIO);
+        return &led;
+    }
+
+    virtual AudioCodec* GetAudioCodec() override {
+#ifdef AUDIO_I2S_METHOD_SIMPLEX
+        static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_SPK_GPIO_BCLK, AUDIO_I2S_SPK_GPIO_LRCK, AUDIO_I2S_SPK_GPIO_DOUT, AUDIO_I2S_MIC_GPIO_SCK, AUDIO_I2S_MIC_GPIO_WS, AUDIO_I2S_MIC_GPIO_DIN);
+#else
+        static NoAudioCodecDuplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
+#endif
+        return &audio_codec;
+    }
+
+    virtual Display* GetDisplay() override {
+        return display_;
+    }
+};
+
+DECLARE_BOARD(CompactWifiBoard);
