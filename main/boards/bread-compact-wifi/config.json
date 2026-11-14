@@ -11,12 +11,7 @@
         {
             "name": "bread-compact-wifi-128x64",
             "sdkconfig_append": [
-                "CONFIG_OLED_SH1106_128X64=y",
-                "CONFIG_USE_CUSTOM_WAKE_WORD=y",
-                "CONFIG_CUSTOM_WAKE_WORD=\"techbot\"",
-                "CONFIG_CUSTOM_WAKE_WORD_DISPLAY=\"Techbot\"",
-                "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20",
-                "CONFIG_SR_MN_EN_MULTINET5_RECOGNITION_QUANT8=y"
+                "CONFIG_OLED_SH1106_128X64=y"
             ]
         }
     ]
